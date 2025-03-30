@@ -1,6 +1,7 @@
 import os
 import requests
 from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import uvicorn
 
@@ -17,6 +18,15 @@ if not OPENROUTER_API_KEY or not FIRECRAWL_API_KEY:
     raise Exception("Missing API keys for OpenRouter or Firecrawl!")
 
 app = FastAPI()
+
+# Add CORS middleware to allow requests from any origin
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # In production, restrict this to your domain(s)
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # --- Firecrawl Integration ---
 def firecrawl_scrape(url: str) -> str:
@@ -78,7 +88,7 @@ agent = initialize_agent(
     llm=llm,
     agent="zero-shot-react-description",
     verbose=True,
-    handle_parsing_errors=True  # This will help handle LLM output parsing errors
+    handle_parsing_errors=True  # Handle output parsing errors gracefully
 )
 
 # --- FastAPI Endpoint ---

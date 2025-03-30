@@ -8,7 +8,8 @@ import uvicorn
 
 # LangChain imports
 from langchain.agents import initialize_agent, Tool, AgentType
-from langchain.chat_models import ChatOpenAI
+# Import the updated ChatOpenAI from langchain_openai instead of langchain.chat_models
+from langchain_openai import ChatOpenAI  
 from typing import Optional, List
 
 # Load API keys from environment variables
@@ -54,15 +55,15 @@ firecrawl_tool_instance = Tool(
     description="Scrapes a given URL using Firecrawl and returns its content."
 )
 
-# --- OpenAI LLM Integration using ChatOpenAI ---
+# --- OpenAI LLM Integration using ChatOpenAI from langchain_openai ---
 llm = ChatOpenAI(
-    model_name="gpt-3.5-turbo",  # or gpt-4 if you have access
+    model_name="gpt-3.5-turbo",  # or use "gpt-4" if you have access
     temperature=0.7,
     openai_api_key=OPENAI_API_KEY
 )
 
 # --- Build the LangChain Agent ---
-# Optionally, you can also include a system prompt in the agent_kwargs if desired.
+# Optionally, include a system prompt in the agent_kwargs to encourage tool usage.
 system_message = (
     "You are a helpful AI assistant. Whenever a query includes a URL, "
     "you should use the FirecrawlScraper tool to fetch the latest content before answering."
@@ -71,7 +72,7 @@ system_message = (
 agent = initialize_agent(
     tools=[firecrawl_tool_instance],
     llm=llm,
-    agent=AgentType.ZERO_SHOT_REACT_DESCRIPTION,  # Using the React agent
+    agent=AgentType.ZERO_SHOT_REACT_DESCRIPTION,
     verbose=True,
     handle_parsing_errors=True,
     agent_kwargs={"system_message": system_message}  # Optional: force tool usage when URLs are present

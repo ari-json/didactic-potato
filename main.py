@@ -15,13 +15,20 @@ if not OPENROUTER_API_KEY or not FIRECRAWL_API_KEY:
 
 # --- Firecrawl Scraping Function ---
 def firecrawl_scrape(url: str) -> str:
-    endpoint = "https://api.firecrawl.dev/scrape"
-    headers = {"Authorization": f"Bearer {FIRECRAWL_API_KEY}"}
-    payload = {"url": url}
+    # Updated endpoint and payload per Firecrawl docs
+    endpoint = "https://api.firecrawl.dev/v1/scrape"
+    headers = {"Authorization": f"Bearer {FIRECRAWL_API_KEY}",
+               "Content-Type": "application/json"}
+    payload = {
+        "url": url,
+        "formats": ["markdown"],     # Request output in markdown
+        "onlyMainContent": True        # Return only the main content
+    }
     response = requests.post(endpoint, json=payload, headers=headers)
     if response.status_code == 200:
         data = response.json()
-        return data.get("content", "")
+        # Return the markdown content from the response
+        return data["data"]["markdown"]
     else:
         raise Exception(f"Firecrawl error: {response.text}")
 
@@ -33,7 +40,7 @@ def openrouter_call(prompt: str) -> str:
         "Content-Type": "application/json",
     }
     payload = {
-        "model": "deepseek/deepseek-r1-zero:free",  # Use the free DeepSeek model
+        "model": "deepseek/deepseek-r1-zero:free",  # Using DeepSeek R1 Zero (free)
         "messages": [{"role": "user", "content": prompt}],
         "temperature": 0.7,
     }

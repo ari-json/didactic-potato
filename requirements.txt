@@ -1,7 +1,7 @@
 fastapi
 uvicorn
 requests
-langchain
 pydantic
 openrouter
 firecrawl
+langchain[community]

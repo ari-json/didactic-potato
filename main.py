@@ -1,18 +1,25 @@
 import os
 import requests
 from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import uvicorn
 
 # LangChain imports
 from langchain.agents import initialize_agent, Tool
-from langchain.chat_models import ChatOpenAI  # Use the ChatOpenAI model from LangChain
+from langchain.llms.base import LLM
+from typing import Optional, List
 
-# Optional: Enable CORS if you need cross-origin requests (e.g., from a frontend)
-from fastapi.middleware.cors import CORSMiddleware
+# Load API keys from environment variables
+OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY")
+FIRECRAWL_API_KEY = os.environ.get("FIRECRAWL_API_KEY")
+
+if not OPENROUTER_API_KEY or not FIRECRAWL_API_KEY:
+    raise Exception("Missing API keys for OpenRouter or Firecrawl!")
 
 app = FastAPI()
 
+# Enable CORS (adjust allow_origins as needed)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],  # In production, restrict to your specific domains
@@ -20,13 +27,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-# Load API keys from environment variables
-OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
-FIRECRAWL_API_KEY = os.environ.get("FIRECRAWL_API_KEY")
-
-if not OPENAI_API_KEY or not FIRECRAWL_API_KEY:
-    raise Exception("Missing API keys for OpenAI or Firecrawl!")
 
 # --- Firecrawl Integration ---
 def firecrawl_scrape(url: str) -> str:
@@ -53,13 +53,34 @@ firecrawl_tool_instance = Tool(
     description="Scrapes a given URL using Firecrawl and returns its content."
 )
 
-# --- OpenAI LLM Integration ---
-# Use your regular OpenAI API key with the ChatOpenAI model
-llm = ChatOpenAI(
-    temperature=0, 
-    model_name="gpt-3.5-turbo",  # Change to another model if desired
-    openai_api_key=OPENAI_API_KEY
-)
+# --- OpenRouter LLM Integration ---
+def openrouter_call(prompt: str) -> str:
+    endpoint = "https://openrouter.ai/api/v1/chat/completions"
+    headers = {
+        "Authorization": f"Bearer {OPENROUTER_API_KEY}",
+        "Content-Type": "application/json",
+    }
+    payload = {
+        "model": "deepseek/deepseek-r1:free",  # Using DeepSeek R1 (free)
+        "messages": [{"role": "user", "content": prompt}],
+        "temperature": 0.7,
+    }
+    response = requests.post(endpoint, json=payload, headers=headers)
+    if response.status_code == 200:
+        data = response.json()
+        return data["choices"][0]["message"]["content"]
+    else:
+        raise Exception(f"OpenRouter error: {response.text}")
+
+class OpenRouterLLM(LLM):
+    @property
+    def _llm_type(self) -> str:
+        return "openrouter"
+
+    def _call(self, prompt: str, stop: Optional[List[str]] = None) -> str:
+        return openrouter_call(prompt)
+
+llm = OpenRouterLLM()
 
 # --- Build the LangChain Agent ---
 agent = initialize_agent(
@@ -67,7 +88,7 @@ agent = initialize_agent(
     llm=llm,
     agent="zero-shot-react-description",
     verbose=True,
-    handle_parsing_errors=True  # Handles any output parsing errors gracefully
+    handle_parsing_errors=True  # Helps manage LLM output parsing errors gracefully
 )
 
 # --- FastAPI Endpoint ---

@@ -51,7 +51,7 @@ def openrouter_call(prompt: str) -> str:
         "Content-Type": "application/json",
     }
     payload = {
-        "model": "gpt-4",  # You can change this to a different model if you wish
+        "model": "deepseek/deepseek-r1-zero:free",  # Using DeepSeek R1 Zero (free)
         "messages": [{"role": "user", "content": prompt}],
         "temperature": 0.7,
     }

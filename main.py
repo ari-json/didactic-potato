@@ -6,7 +6,7 @@ from pydantic import BaseModel
 import uvicorn
 
 # LangChain imports
-from langchain.agents import initialize_agent, Tool
+from langchain.agents import initialize_agent, Tool, AgentType
 from langchain.llms.base import LLM
 from typing import Optional, List
 
@@ -82,13 +82,21 @@ class OpenRouterLLM(LLM):
 
 llm = OpenRouterLLM()
 
-# --- Build the LangChain Agent ---
+# --- Build the LangChain Agent with a Custom System Prompt ---
+system_message = (
+    "You are a helpful AI assistant. You have access to a tool named 'FirecrawlScraper'. "
+    "Whenever the user query includes a URL, you MUST call the FirecrawlScraper tool to fetch "
+    "the latest content from that URL BEFORE giving your final answer. If no URL is present, "
+    "answer from your own knowledge."
+)
+
 agent = initialize_agent(
     tools=[firecrawl_tool_instance],
     llm=llm,
     agent="zero-shot-react-description",
     verbose=True,
-    handle_parsing_errors=True  # Helps manage LLM output parsing errors gracefully
+    handle_parsing_errors=True,
+    agent_kwargs={"system_message": system_message}  # Pass the system prompt here
 )
 
 # --- FastAPI Endpoint ---

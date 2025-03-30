@@ -2,35 +2,18 @@ import os
 import re
 import requests
 from fastapi import FastAPI, HTTPException
-from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import uvicorn
 
-# LangChain imports
-from langchain.agents import initialize_agent, Tool, AgentType
-# Import the updated ChatOpenAI from langchain_openai instead of langchain.chat_models
-from langchain_openai import ChatOpenAI  
-from typing import Optional, List
-
-# Load API keys from environment variables
-OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
-FIRECRAWL_API_KEY = os.environ.get("FIRECRAWL_API_KEY")
-
-if not OPENAI_API_KEY or not FIRECRAWL_API_KEY:
-    raise Exception("Missing API keys for OpenAI or Firecrawl!")
-
 app = FastAPI()
 
-# Enable CORS (adjust allow_origins as needed)
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],  # For production, restrict to your specific domains
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+# Load API keys from environment variables
+OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY")
+FIRECRAWL_API_KEY = os.environ.get("FIRECRAWL_API_KEY")
+if not OPENROUTER_API_KEY or not FIRECRAWL_API_KEY:
+    raise Exception("Missing API keys for OpenRouter or Firecrawl!")
 
-# --- Firecrawl Integration ---
+# --- Firecrawl Scraping Function ---
 def firecrawl_scrape(url: str) -> str:
     endpoint = "https://api.firecrawl.dev/scrape"
     headers = {"Authorization": f"Bearer {FIRECRAWL_API_KEY}"}
@@ -42,54 +25,64 @@ def firecrawl_scrape(url: str) -> str:
     else:
         raise Exception(f"Firecrawl error: {response.text}")
 
-def firecrawl_tool(query: str) -> str:
-    try:
-        content = firecrawl_scrape(query)
-        return f"Scraped content: {content[:500]}..."
-    except Exception as e:
-        return f"Error scraping URL: {e}"
+# --- OpenRouter Call Function ---
+def openrouter_call(prompt: str) -> str:
+    endpoint = "https://openrouter.ai/api/v1/chat/completions"
+    headers = {
+        "Authorization": f"Bearer {OPENROUTER_API_KEY}",
+        "Content-Type": "application/json",
+    }
+    payload = {
+        "model": "deepseek/deepseek-r1-zero:free",  # Use the free DeepSeek model
+        "messages": [{"role": "user", "content": prompt}],
+        "temperature": 0.7,
+    }
+    response = requests.post(endpoint, json=payload, headers=headers)
+    if response.status_code == 200:
+        data = response.json()
+        return data["choices"][0]["message"]["content"]
+    else:
+        raise Exception(f"OpenRouter error: {response.text}")
 
-firecrawl_tool_instance = Tool(
-    name="FirecrawlScraper",
-    func=firecrawl_tool,
-    description="Scrapes a given URL using Firecrawl and returns its content."
-)
+# --- Helper to Extract URL from Query ---
+def extract_url(query: str) -> str:
+    # Use a simple regex to extract the first URL found in the query
+    match = re.search(r'https?://\S+', query)
+    return match.group(0) if match else None
 
-# --- OpenAI LLM Integration using ChatOpenAI from langchain_openai ---
-llm = ChatOpenAI(
-    model_name="gpt-3.5-turbo",  # or use "gpt-4" if you have access
-    temperature=0.7,
-    openai_api_key=OPENAI_API_KEY
-)
+# --- Build a Prompt for the LLM ---
+def build_prompt(query: str, scraped_content: str) -> str:
+    # Instruct the LLM to extract all pricing details from the scraped content
+    prompt = f"""User Query: {query}
 
-# --- Build the LangChain Agent ---
-# Optionally, include a system prompt in the agent_kwargs to encourage tool usage.
-system_message = (
-    "You are a helpful AI assistant. Whenever a query includes a URL, "
-    "you should use the FirecrawlScraper tool to fetch the latest content before answering."
-)
+The following text is the content scraped from the URL:
+{scraped_content}
 
-agent = initialize_agent(
-    tools=[firecrawl_tool_instance],
-    llm=llm,
-    agent=AgentType.ZERO_SHOT_REACT_DESCRIPTION,
-    verbose=True,
-    handle_parsing_errors=True,
-    agent_kwargs={"system_message": system_message}  # Optional: force tool usage when URLs are present
-)
+Please extract and list all pricing information from the content in a clear and concise manner.
+"""
+    return prompt
 
-# --- FastAPI Endpoint ---
+# --- API Request Model ---
 class QueryRequest(BaseModel):
     query: str
 
+# --- API Endpoint ---
 @app.post("/ask")
-async def ask_agent(request: QueryRequest):
+async def ask_scraper(request: QueryRequest):
+    query = request.query
+    url = extract_url(query)
+    if not url:
+        raise HTTPException(status_code=400, detail="No URL found in the query")
     try:
-        result = agent.run(request.query)
-        return {"response": result}
+        # Scrape the webpage using Firecrawl
+        scraped_content = firecrawl_scrape(url)
+        # Build a prompt combining the query and scraped content
+        prompt = build_prompt(query, scraped_content)
+        # Call the LLM via OpenRouter to extract pricing info
+        answer = openrouter_call(prompt)
+        return {"response": answer}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-# --- Run the App ---
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)
